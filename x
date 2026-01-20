@@ -334,57 +334,54 @@ EOF
         fi
     done
 elif [ "$API_PROVIDER" = "local" ]; then
-    # Try models in order of preference (cheap to cheaper)
-        [[ $DEBUG -eq 1 ]] && echo "DEBUG: Trying locally running model: $LOCAL_LLM" >&2
-        JSON_PAYLOAD=$(cat <<EOF
+    # Using locally running Ollama
+    MODEL="${LOCAL_MODEL}"
+    [[ $DEBUG -eq 1 ]] && echo "DEBUG: Using local Ollama model: $MODEL" >&2
+    
+    JSON_PAYLOAD=$(cat <<'EOF'
 {
-  "model": "$LOCAL_LLM",
+  "model": "MODEL_PLACEHOLDER",
   "prompt": "PROMPT_PLACEHOLDER",
+  "stream": false
 }
 EOF
 )
-        JSON_PAYLOAD="${JSON_PAYLOAD//PROMPT_PLACEHOLDER/$PROMPT_TEXT}"
-        [[ $DEBUG -eq 1 ]] && echo "DEBUG: Sending request to local llm..." >&2
-        if [ "$HTTP_CLIENT" = "curl" ]; then
-            RESPONSE=$(curl -s -X POST http://localhost:11434/api/generate \
-                -H "Content-Type: application/json" \
-                -d "$JSON_PAYLOAD")
-        else
-            RESPONSE=$(wget -q -O- \
-                --method=POST \
-                --header="Content-Type: application/json" \
-                --body-data="$JSON_PAYLOAD" \
-                http://localhost:11434/api/generate)
-        fi
-        [[ $DEBUG -eq 1 ]] && echo "DEBUG: Response received" >&2
-        [[ $DEBUG -eq 1 ]] && echo "DEBUG: Full response: $RESPONSE" >&2
+    JSON_PAYLOAD="${JSON_PAYLOAD//MODEL_PLACEHOLDER/$MODEL}"
+    JSON_PAYLOAD="${JSON_PAYLOAD//PROMPT_PLACEHOLDER/$PROMPT_TEXT}"
+    
+    [[ $DEBUG -eq 1 ]] && echo "DEBUG: Sending request to Ollama..." >&2
+    if [ "$HTTP_CLIENT" = "curl" ]; then
+        RESPONSE=$(curl -s -X POST http://localhost:11434/api/generate \
+            -H "Content-Type: application/json" \
+            -d "$JSON_PAYLOAD")
+    else
+        RESPONSE=$(wget -q -O- \
+            --method=POST \
+            --header="Content-Type: application/json" \
+            --body-data="$JSON_PAYLOAD" \
+            http://localhost:11434/api/generate)
+    fi
+    
+    [[ $DEBUG -eq 1 ]] && echo "DEBUG: Response received" >&2
+    [[ $DEBUG -eq 1 ]] && echo "DEBUG: Full response: $RESPONSE" >&2
 
-        # Check for model-related errors
-        if echo "$RESPONSE" | grep -q '"error"'; then
-            ERROR_MSG=$(echo "$RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('error', {}).get('code', ''))" 2>/dev/null)
-            if [[ "$ERROR_MSG" == "model_not_found" ]] || echo "$RESPONSE" | grep -q "does not exist"; then
-                [[ $DEBUG -eq 1 ]] && echo "DEBUG: Model $MODEL not available, trying next..." >&2
-                continue
-            else
-                echo "Error: API request failed"
-                echo "$RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('error', {}).get('message', data))" 2>/dev/null || echo "$RESPONSE"
-                exit 1
-            fi
-        fi
+    if echo "$RESPONSE" | grep -q '"error"'; then
+        echo "Error: Ollama API request failed"
+        echo "$RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('error', data))" 2>/dev/null || echo "$RESPONSE"
+        exit 1
+    fi
 
-        if command -v python3 &> /dev/null; then
-            COMMAND=$(echo "$RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data['choices'][0]['message']['content'])" 2>/dev/null)
-        else
-            COMMAND=$(echo "$RESPONSE" | sed -n 's/.*"content"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-        fi
+    if command -v python3 &> /dev/null; then
+        COMMAND=$(echo "$RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('response', ''))" 2>/dev/null)
+    else
+        COMMAND=$(echo "$RESPONSE" | sed -n 's/.*"response"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    fi
 
-        if [ -n "$COMMAND" ]; then
-            # Save working model to config
-            echo "LOCAL_LLM=\"$LOCAL_LLM\"" > "$CONFIG_FILE"
-            [[ $DEBUG -eq 1 ]] && echo "DEBUG: Saved working model: $LOCAL_LLM" >&2
-            [[ $DEBUG -eq 1 ]] && echo "DEBUG: Extracted command: $COMMAND" >&2
-            break
-        fi
+    if [ -n "$COMMAND" ]; then
+        echo "LOCAL_MODEL=\"$MODEL\"" > "$CONFIG_FILE"
+        [[ $DEBUG -eq 1 ]] && echo "DEBUG: Saved working model: $MODEL" >&2
+        [[ $DEBUG -eq 1 ]] && echo "DEBUG: Extracted command: $COMMAND" >&2
+    fi
 fi
 
 
