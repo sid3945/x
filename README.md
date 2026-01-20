@@ -19,6 +19,7 @@ Set your API key (choose one):
 export OPENAI_API_KEY="your-key"
 export ANTHROPIC_API_KEY="your-key"
 export GEMINI_API_KEY="your-key"
+export LOCAL_LLM=gemma3:12b
 ```
 
 Add to your shell config (`~/.bashrc`, `~/.zshrc`, etc):
